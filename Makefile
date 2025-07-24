@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -g \
-  -I/home/tdhoang/Documents/01_IT/01_Coding/sched_a653lib/wasmtime-v34.0.1-x86_64-linux-c-api/include
-LDFLAGS = -L/home/tdhoang/Documents/01_IT/01_Coding/sched_a653lib/wasmtime-v34.0.1-x86_64-linux-c-api/lib -lwasmtime
+  -I/capi/include
+LDFLAGS = -L/capi/lib -lwasmtime
 
 WAT_FILE = main.wat
 WASM_FILE = main.wasm
