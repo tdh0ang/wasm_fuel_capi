@@ -1,5 +1,8 @@
 # WebAssembly (Wasm) fuel example with the Wasmtime C API
 
+## Dependencies
+- wasmtime-v34.0.1-x86_64-linux-c-api found in https://github.com/bytecodealliance/wasmtime/releases
+
 ## Sources
 - https://docs.wasmtime.dev/
 - https://docs.wasmtime.dev/c-api/
