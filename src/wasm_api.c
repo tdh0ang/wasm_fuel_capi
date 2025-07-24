@@ -370,7 +370,6 @@ int wasm_api_run_partition(int partition_id, const char* func_name) {
         printf("Fibonacci(%d) =  %d\n", fib, results[0].of.i32);
     }
 
-    // TODO: Move to cleanup func
     wasmtime_call_future_delete(future);
 
     return WASM_API_OK;   
