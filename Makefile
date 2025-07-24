@@ -9,7 +9,7 @@ LDFLAGS = -L/capi/lib -lwasmtime
 WAT_FILES := $(wildcard wasm/*.wat)
 WASM_FILES := $(WAT_FILES:.wat=.wasm)
 
-SRCS = src/wasm_api.c
+SRCS = main.c src/wasm_api.c
 OBJS = $(SRCS:.c=.o)
 TARGET = sched
 
