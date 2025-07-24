@@ -62,9 +62,10 @@ int wasm_api_load_partition(int partition_id, const char* wasm_file);
  *
  * @param partition_id Partition identifier
  * @param fuel_amount Amount of fuel for the partition
+ * @param yield True when yielding should be activated
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
-int wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount);
+int wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount, bool yield);
 
  
 /**

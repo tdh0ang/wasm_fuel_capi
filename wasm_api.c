@@ -28,6 +28,7 @@
 #define ERR            -1
 #define TRAP            0
 #define FUEL_AMOUNT     10000000
+#define YIELD_AFTER     100
 #define NUM_RUNS        100
 
 /****************************************************************************
@@ -168,6 +169,7 @@ static uint64_t runPartitionBenchmark(int partition_id, const char* func_name) {
  */
 int wasm_api_init(void) {
     
+    // Config to enable fuel usage
     config = wasm_config_new();
 
     // Enable fuel consumption
@@ -176,6 +178,7 @@ int wasm_api_init(void) {
     // Async Support
     wasmtime_config_async_support_set(config, true);
 
+    // Engine creation
     engine = wasm_engine_new_with_config(config);
     if(!engine) {
         printf("Failed to create Wasmtime engine\n");
@@ -234,7 +237,6 @@ int wasm_api_load_partition(int partition_id, const char* wasm_file) {
     partitions[partition_id]->module = NULL;
     partitions[partition_id]->instantiated = false;
 
-
     /* Read .wasm content */
 
     // Open Wasm file
@@ -274,7 +276,7 @@ int wasm_api_load_partition(int partition_id, const char* wasm_file) {
         return catch_err(ERR, "Failed to compile wasm module", error, NULL);
     }
 
-    // Create Asnyc instance
+    // Create Asnyc instance, pre instance required for wasmtime_instance_pre_instantiate_async
     wasmtime_instance_pre_t *instance_pre = NULL;
     error = wasmtime_linker_instantiate_pre(partition->linker, partition->module, &instance_pre);
     if(error != NULL) {
@@ -285,34 +287,21 @@ int wasm_api_load_partition(int partition_id, const char* wasm_file) {
     
     // Instantiate
     wasm_trap_t* trap = NULL;
-    // error = wasmtime_instance_new(partition->context, partition->module, NULL, 0, &partition->instance, &trap);
     wasmtime_call_future_t *future = wasmtime_instance_pre_instantiate_async(instance_pre, partition->context, &partition->instance, &trap, &error);
     if (error || !future) {
         return catch_err(ERR, "Error during async instantiation\n", error, NULL);
     }
 
-    // Error == unsuccessful resource alloc, trap == runtime exception
-    // if(error != NULL || trap != NULL) {
-    //     if(error != NULL) {
-    //         catch_err(ERR, "Error while instantiating wasm module", error, NULL);
-    //     }else if(trap != NULL) {
-    //         catch_err(TRAP, "Trap during instantiation", NULL, trap);
-    //     }
-
-    //     wasmtime_module_delete(partition->module);
-    //     wasmtime_store_delete(partition->store);
-    //     free(partition);
-    //     return WASM_API_ERR;// TODO: When to exit with return
-    // }
 
     while(!wasmtime_call_future_poll(future)) {
         printf("instantiation yielded...\n");
     }
 
+    wasmtime_call_future_delete(future);
+
+    // Finalise partition attributes
     partition->instantiated = true;
     partitions[partition_id] = partition;
-
-    wasmtime_call_future_delete(future);
 
     return WASM_API_OK;
 }
@@ -323,18 +312,24 @@ int wasm_api_load_partition(int partition_id, const char* wasm_file) {
  *
  * @param partition_id Partition identifier
  * @param fuel_amount Amount of fuel for the partition
+ * @param yield True when yielding should be activated
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
-int wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount) {
+int wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount, bool yield) {
 
     printf("Injecting %lu units of fuel...\n", fuel_amount);
 
     wasmtime_error_t* error = wasmtime_context_set_fuel(partitions[partition_id]->context, fuel_amount);
 
-    // Async Yield
-    wasmtime_context_fuel_async_yield_interval(partitions[partition_id]->context, 100);
-
     catch_err(ERR, "Error injecting fuel", error, NULL);
+
+    // Async Yield
+    if(yield) {
+        wasmtime_context_fuel_async_yield_interval(partitions[partition_id]->context, 100);
+    } else {
+        printf("No yielding set\n");
+        wasmtime_context_fuel_async_yield_interval(partitions[partition_id]->context, 0);
+    }
 
     return WASM_API_OK;    
 }
@@ -354,7 +349,7 @@ int wasm_api_run_partition(int partition_id, const char* func_name) {
     }
 
     /* Look up exported function */
-
+printf("DEBUG\n");
     // Looks up export by func_name in the current instance, result stored in ext
     wasmtime_extern_t ext;
     bool ok = wasmtime_instance_export_get(partitions[partition_id]->context, &partitions[partition_id]->instance, func_name, strlen(func_name), &ext);
@@ -364,7 +359,7 @@ int wasm_api_run_partition(int partition_id, const char* func_name) {
         printf("Function '%s' not found or not a function\n", func_name);
         return WASM_API_ERR;
     }
-
+printf("DEBUG\n");
     /* Call function */
 
     wasm_trap_t* trap = NULL;
@@ -376,14 +371,6 @@ int wasm_api_run_partition(int partition_id, const char* func_name) {
     params[0].of.i32 = fib;
 
     wasmtime_val_t results[1]; // TODO: Expect only one result
-
-    // Actual call
-    // wasmtime_error_t* error = wasmtime_func_call(
-    //     partitions[partition_id]->context, &ext.of.func,
-    //     params, 1,      // Parameters
-    //     results, 1,     // Result
-    //     &trap
-    // );
 
     wasmtime_call_future_t *future = wasmtime_func_call_async(
         partitions[partition_id]->context, &ext.of.func,
@@ -491,11 +478,11 @@ int main(int argc, char** argv) {
 
     if(wasm_api_load_partition(0, "fib.wasm") != WASM_API_OK) return WASM_API_ERR;
 
-    if(wasm_api_inject_fuel(0, FUEL_AMOUNT) != WASM_API_OK) return WASM_API_ERR;
+    if(wasm_api_inject_fuel(0, FUEL_AMOUNT, true) != WASM_API_OK) return WASM_API_ERR;
 
     if(wasm_api_load_partition(1, "fib.wasm") != WASM_API_OK) return WASM_API_ERR;
 
-    if(wasm_api_inject_fuel(1, FUEL_AMOUNT) != WASM_API_OK) return WASM_API_ERR;
+    if(wasm_api_inject_fuel(1, FUEL_AMOUNT, true) != WASM_API_OK) return WASM_API_ERR;
 
     if(benchmark_mode) {
         printf("Running in benchmark mode\n");
