@@ -18,8 +18,6 @@
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
-#include <wasm.h>
-#include <wasmtime.h>
 
 
 /****************************************************************************
@@ -27,9 +25,6 @@
 ****************************************************************************/
 #define ERR            -1
 #define TRAP            0
-#define FUEL_AMOUNT     10000000
-#define YIELD_AFTER     100
-#define NUM_RUNS        100
 
 /****************************************************************************
  * Wasm/Wasmtime related instances
@@ -38,30 +33,17 @@ wasm_engine_t *engine;
 wasm_config_t *config;
 
 /****************************************************************************
- * Wasm Partition Struct
+ * Wasm Partition Array
 ****************************************************************************/
-struct wasm_partition {
-    wasmtime_module_t *module;
-    wasmtime_instance_t instance;
-    wasmtime_context_t *context;
-    wasmtime_store_t *store;
-    wasmtime_linker_t *linker;
-    int partition_id;
-    bool instantiated;
-};
-
-wasm_partition* partitions[NUM_MAX_PARTITIONS] = {NULL};
+wasm_partition *partitions[NUM_MAX_PARTITIONS] = {NULL};
 
 /****************************************************************************
  * Static Function Prototypes
 ****************************************************************************/
 static int catch_err(int errType, const char* msgPrint, wasmtime_error_t* err, wasm_trap_t* trap);
 static int printFuelUsage(int partition_id);
-static int partitionIdValid(int id);
+static int partitionIdValid(int partition_id);
 
-// Benchmark related functions
-static uint64_t getTimeUs();
-static uint64_t runPartitionBenchmark(int partition_id, const char* func_name);
 
 /****************************************************************************
  * Static Function Implementations
@@ -129,9 +111,9 @@ static int printFuelUsage(int partition_id) {
  *
  * @return WASM_API_OK, else WASM_API_ERR
  */
-static int partitionIdValid(int id) {
-    if(id < 0 || id > NUM_MAX_PARTITIONS){
-        printf("Invalid partition Id %d\n", id);
+static int partitionIdValid(int partition_id) {
+    if(partition_id < 0 || partition_id > NUM_MAX_PARTITIONS){
+        printf("Invalid partition Id %d\n", partition_id);
         return WASM_API_ERR;
     }else {
         return WASM_API_OK;
@@ -139,28 +121,15 @@ static int partitionIdValid(int id) {
 }
 
 
-static uint64_t getTimeUs(){
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return ((uint64_t)tv.tv_sec * 1000000 + tv.tv_usec);
-}
-
-static uint64_t runPartitionBenchmark(int partition_id, const char* func_name) {
-    uint64_t start = getTimeUs();
-
-    if(wasm_api_run_partition(partition_id, func_name) != WASM_API_OK) return 0; 
-
-    uint64_t end = getTimeUs();
-    uint64_t duration = end - start;
-
-    printf("Partition %d ran '%s' in %lu µs\n", partition_id, func_name, duration);
-
-    return duration;
-}
-
 /****************************************************************************
  * Function Implementations
 ****************************************************************************/
+
+wasm_partition *get_wasm_partition(int partition_id) {
+    partitionIdValid(partition_id);
+    return partitions[partition_id];
+}
+
 
 /**
  * @brief Initialize the Wasm engine and context globally 
@@ -454,63 +423,4 @@ void wasm_api_cleanup(void) {
     }
 
     printf("\nWasm API cleaned up!\n");
-}
-
-
-/****************************************************************************
- * Main for Testing
-****************************************************************************/
-
-static void printInfo(int partition_id, int run) {
-    uint64_t fuel_remaining = 0;
-    wasmtime_context_get_fuel(partitions[partition_id]->context, &fuel_remaining);
-    printf("<<<<<<<<<<<<<<<<<<<< Partition %u >>>>>>>>>>>>>>>>>>>>\n", 0);
-    printf("Fuel remaining: %lu\n", fuel_remaining);
-    printf("Fuel used (total): %lu\n", (FUEL_AMOUNT - fuel_remaining));
-    printf("Fuel used (this run): %lu\n", (FUEL_AMOUNT - fuel_remaining)/(run + 1));
-}
-
-int main(int argc, char** argv) {
-
-    int benchmark_mode = (argc > 1 && strcmp(argv[1], "--benchmark") == 0);
-
-    if(wasm_api_init() != WASM_API_OK) return 1;
-
-    if(wasm_api_load_partition(0, "fib.wasm") != WASM_API_OK) return WASM_API_ERR;
-
-    if(wasm_api_inject_fuel(0, FUEL_AMOUNT, true) != WASM_API_OK) return WASM_API_ERR;
-
-    if(wasm_api_load_partition(1, "fib.wasm") != WASM_API_OK) return WASM_API_ERR;
-
-    if(wasm_api_inject_fuel(1, FUEL_AMOUNT, false) != WASM_API_OK) return WASM_API_ERR;
-
-    if(benchmark_mode) {
-        printf("Running in benchmark mode\n");
-
-        uint64_t total_time[2] = {0, 0};
-
-        for(int run = 0; run < NUM_RUNS; run++) {
-            printf("\n##################### Run %d: #####################\n", run + 1);
-            uint64_t t0 = runPartitionBenchmark(0, "main");
-            uint64_t t1 = runPartitionBenchmark(1, "main");
-
-            printInfo(0, run);            
-            printInfo(1, run);
-
-            total_time[0] += t0;
-            total_time[1] += t1;
-
-        }
-
-        printf("\nAverage time Partition 0: %lu µs\n", total_time[0] / NUM_RUNS);
-        printf("Average time Partition 1: %lu µs\n", total_time[1] / NUM_RUNS);
-
-    }else {
-        if(runPartitionBenchmark(0, "main") == (uint64_t) WASM_API_ERR) return 1;
-        if(runPartitionBenchmark(1, "main") == (uint64_t) WASM_API_ERR) return 1;
-    }
-
-    wasm_api_cleanup();
-
-    return 0;
 }

@@ -13,13 +13,17 @@
 ****************************************************************************/
 #include <stdbool.h>
 #include <stdint.h>
+#include <wasm.h>
+#include <wasmtime.h>
 
 
 /****************************************************************************
  * Defines
 ****************************************************************************/
 #define NUM_MAX_PARTITIONS 2
-
+#define FUEL_AMOUNT     10000000
+#define YIELD_AFTER     100
+#define NUM_RUNS        100
 
 /****************************************************************************
  * Error Codes
@@ -32,7 +36,16 @@
 /****************************************************************************
  * Structs
 ****************************************************************************/
-typedef struct wasm_partition wasm_partition;
+
+typedef struct wasm_partition {
+    wasmtime_module_t *module;
+    wasmtime_instance_t instance;
+    wasmtime_context_t *context;
+    wasmtime_store_t *store;
+    wasmtime_linker_t *linker;
+    int partition_id;
+    bool instantiated;
+}wasm_partition;
 
 
 /****************************************************************************
@@ -92,5 +105,14 @@ int wasm_api_fuel_remaining(int partition_id);
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
 void wasm_api_cleanup(void);
+
+/**
+ * @brief Returns partition array
+ *
+ * @param partition_id
+ * @return Returns partition array
+ */
+wasm_partition *get_wasm_partition(int partition_id);
+
 
 #endif // WASM_API_H
