@@ -349,7 +349,7 @@ int wasm_api_run_partition(int partition_id, const char* func_name) {
     }
 
     /* Look up exported function */
-printf("DEBUG\n");
+
     // Looks up export by func_name in the current instance, result stored in ext
     wasmtime_extern_t ext;
     bool ok = wasmtime_instance_export_get(partitions[partition_id]->context, &partitions[partition_id]->instance, func_name, strlen(func_name), &ext);
@@ -359,7 +359,7 @@ printf("DEBUG\n");
         printf("Function '%s' not found or not a function\n", func_name);
         return WASM_API_ERR;
     }
-printf("DEBUG\n");
+
     /* Call function */
 
     wasm_trap_t* trap = NULL;
@@ -482,7 +482,7 @@ int main(int argc, char** argv) {
 
     if(wasm_api_load_partition(1, "fib.wasm") != WASM_API_OK) return WASM_API_ERR;
 
-    if(wasm_api_inject_fuel(1, FUEL_AMOUNT, true) != WASM_API_OK) return WASM_API_ERR;
+    if(wasm_api_inject_fuel(1, FUEL_AMOUNT, false) != WASM_API_OK) return WASM_API_ERR;
 
     if(benchmark_mode) {
         printf("Running in benchmark mode\n");
