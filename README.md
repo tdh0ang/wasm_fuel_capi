@@ -33,17 +33,25 @@ This is where async execution of Wasm modules is of interest. Async execution al
 
 ```
 wasm_fuel_capi
-├── fib.wasm                
-├── fib.wat                 # Fibonacci 
-├── main.wat                # Loop incrementing a number
-├── Makefile                
+├── capi                    # Wasmtime C API v34.0.1-x86_64
+│   ├── include
+│   ├── lib
+│   ├── LICENSE
+│   ├── min
+│   └── README.md
+├── main.c                  # Main calling API functions
+├── Makefile
 ├── old                     # Deprecated files, old versions
 │   ├── main.wat
 │   ├── wasm_api_v1.c
 │   └── wasm_api_v2.c
 ├── README.md
-├── wasm_api.c              # Main file implementing the logic
-└── wasm_api.h
+├── src
+│   ├── wasm_api.c          # Main file implementing the logic
+│   └── wasm_api.h
+└── wasm
+    ├── fib.wat             # Fibonacci 
+    └── main.wat            # Loop incrementing a number
 ```
 
 ### Running
