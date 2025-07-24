@@ -3,18 +3,21 @@ CFLAGS = -Wall -Wextra -g \
   -I/capi/include
 LDFLAGS = -L/capi/lib -lwasmtime
 
-WAT_FILE = main.wat
-WASM_FILE = main.wasm
+# WAT_FILE = wasm/fib.wat
+# WASM_FILE = wasm/fib.wasm
 
-SRCS = wasm_api.c
+WAT_FILES := $(wildcard wasm/*.wat)
+WASM_FILES := $(WAT_FILES:.wat=.wasm)
+
+SRCS = src/wasm_api.c
 OBJS = $(SRCS:.c=.o)
 TARGET = sched
 
 .PHONY: all clean
 
-all: $(WASM_FILE) $(TARGET)
+all: $(WASM_FILES) $(TARGET)
 
-$(WASM_FILE): $(WAT_FILE)
+wasm/%.wasm: wasm/%.wat
 	wat2wasm $< -o $@
 
 $(TARGET): $(OBJS)
@@ -22,5 +25,5 @@ $(TARGET): $(OBJS)
 	@rm -f $(OBJS)
 
 clean:
-	rm -f $(TARGET) $(WASM_FILE)
+	rm -f $(TARGET) $(WASM_FILES)
 
