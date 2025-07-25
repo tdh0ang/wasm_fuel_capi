@@ -43,10 +43,19 @@ typedef struct wasm_partition {
     wasmtime_context_t *context;
     wasmtime_store_t *store;
     wasmtime_linker_t *linker;
+    wasmtime_call_future_t *future;
     int partition_id;
     bool instantiated;
+    wasmtime_val_t *results;
+    wasmtime_func_t exported_func;
 }wasm_partition;
 
+
+typedef enum {
+    PARTITION_DONE,
+    PARTITION_YIELDED,
+    PARTITION_ERROR
+} partition_status;
 
 /****************************************************************************
  * Function Prototypes
