@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <sys/time.h>
+#include <unistd.h>
 
 // Benchmark related functions
 static uint64_t getTimeUs();
@@ -85,6 +86,7 @@ static void sched_cycle() {
 
     while(1) {
         int current_partition = num_partition;
+        printf("<<<<<<<<<<<<<<<<<<<< Partition %u >>>>>>>>>>>>>>>>>>>>\n", current_partition);
         partition_status status = wasm_api_run_partition(current_partition, "main");
 
         switch (status) {
@@ -105,6 +107,7 @@ static void sched_cycle() {
                 printf("Unknown status from Partition %d\n", current_partition);
             break;
         }
+        sleep(1);
     }
 }
 
