@@ -245,7 +245,7 @@ int wasm_api_load_partition(int partition_id, const char* wasm_file) {
         return catch_err(ERR, "Failed to compile wasm module", error, NULL);
     }
 
-    // Create Asnyc instance, pre instance required for wasmtime_instance_pre_instantiate_async
+    // Create Async instance, pre instance required for wasmtime_instance_pre_instantiate_async
     wasmtime_instance_pre_t *instance_pre = NULL;
     error = wasmtime_linker_instantiate_pre(partition->linker, partition->module, &instance_pre);
     if(error != NULL) {
@@ -269,8 +269,10 @@ int wasm_api_load_partition(int partition_id, const char* wasm_file) {
     wasmtime_call_future_delete(future);
 
     // Finalise partition attributes
+    partition->future = NULL;
     partition->instantiated = true;
     partitions[partition_id] = partition;
+    
 
     return WASM_API_OK;
 }
@@ -286,19 +288,21 @@ int wasm_api_load_partition(int partition_id, const char* wasm_file) {
  */
 int wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount, bool yield) {
 
+    wasm_partition *partition = partitions[partition_id];
+
     printf("Injecting %lu units of fuel...\n", fuel_amount);
 
-    wasmtime_error_t* error = wasmtime_context_set_fuel(partitions[partition_id]->context, fuel_amount);
+    wasmtime_error_t* error = wasmtime_context_set_fuel(partition->context, fuel_amount);
 
     catch_err(ERR, "Error injecting fuel", error, NULL);
 
     // Async Yield
     if(yield) {
         printf("Yielding set for partition %d\n", partition_id);
-        wasmtime_context_fuel_async_yield_interval(partitions[partition_id]->context, 100);
+        wasmtime_context_fuel_async_yield_interval(partition->context, 100);
     } else {
         printf("No yielding set for partition %d\n", partition_id);
-        wasmtime_context_fuel_async_yield_interval(partitions[partition_id]->context, 0);
+        wasmtime_context_fuel_async_yield_interval(partition->context, 0);
     }
 
     return WASM_API_OK;    
@@ -312,67 +316,98 @@ int wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount, bool yield) {
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
 int wasm_api_run_partition(int partition_id, const char* func_name) {
+    printf("RUN PARTITION %d\n", partition_id);
+    wasm_partition *partition = partitions[partition_id];
+    
+    int32_t fib = 10;
+    wasmtime_val_t params[1];
+    // wasmtime_val_t results[1]; // TODO: Expect only one result
+    if (partition->results == NULL) {
+        partition->results = malloc(sizeof(wasmtime_val_t));  // Or handle allocation elsewhere
+        if (!partition->results) {
+            fprintf(stderr, "Failed to allocate results buffer\n");
+            return WASM_API_ERR;
+        }
+    }
 
-    if(!partitions[partition_id]->instantiated) {
+    if(!partition->instantiated) {
         printf("Module not instantiated\n");
         return WASM_API_ERR;
     }
 
-    /* Look up exported function */
+    // First time call, skips function export in runs after that
+    if(partition->future == NULL) {    
+        printf("EXPORT FUNC %d\n", partition_id);
+        /* Look up exported function */
 
-    // Looks up export by func_name in the current instance, result stored in ext
-    wasmtime_extern_t ext;
-    bool ok = wasmtime_instance_export_get(partitions[partition_id]->context, &partitions[partition_id]->instance, func_name, strlen(func_name), &ext);
+        // Looks up export by func_name in the current instance, result stored in ext
+        wasmtime_extern_t ext;
+        bool ok = wasmtime_instance_export_get(partition->context, &partition->instance, func_name, strlen(func_name), &ext);
 
-    // Export exist and it's a function
-    if(!ok || ext.kind != WASMTIME_EXTERN_FUNC) {
-        printf("Function '%s' not found or not a function\n", func_name);
-        return WASM_API_ERR;
-    }
-
-    /* Call function */
-
-    wasm_trap_t* trap = NULL;
-    wasmtime_error_t *error = NULL;
-
-    int32_t fib = 10;
-    wasmtime_val_t params[1];
-    params[0].kind = WASMTIME_I32;
-    params[0].of.i32 = fib;
-
-    wasmtime_val_t results[1]; // TODO: Expect only one result
-
-    wasmtime_call_future_t *future = wasmtime_func_call_async(
-        partitions[partition_id]->context, &ext.of.func,
-        params, 1,
-        results, 1,
-        &trap, &error
-    );
-
-    if(error != NULL || trap != NULL) {
-        if(error != NULL) {
-            catch_err(ERR, "Error calling function", error, NULL);
-        }else if(trap != NULL) {
-            catch_err(TRAP, "Trap while calling function", NULL, trap);
+        // Export exist and it's a function
+        if(!ok || ext.kind != WASMTIME_EXTERN_FUNC) {
+            printf("Function '%s' not found or not a function\n", func_name);
+            return WASM_API_ERR;
         }
 
-        return WASM_API_ERR;
+        partition->exported_func = ext.of.func;
+
+        /* Call function */
+
+        wasm_trap_t* trap = NULL;
+        wasmtime_error_t *error = NULL;
+
+        params[0].kind = WASMTIME_I32;
+        params[0].of.i32 = fib;
+
+        partition->future = wasmtime_func_call_async(
+            partition->context, &partition->exported_func,
+            params, 1,
+            partition->results, 1,
+            &trap, &error
+        );
+
+        if(error != NULL || trap != NULL) {
+            if(error != NULL) {
+                catch_err(ERR, "Error calling function", error, NULL);
+            }else if(trap != NULL) {
+                catch_err(TRAP, "Trap while calling function", NULL, trap);
+            }
+
+            return WASM_API_ERR;
+        }
+
+    }
+    // wasmtime_call_future_poll returns false when yielded
+    if(wasmtime_call_future_poll(partition->future)) {
+        if(partition->results[0].kind == WASMTIME_I32) {
+            printf("Fibonacci(%d) =  %d\n", 10, partition->results[0].of.i32);
+        }
+        printf("Partition %d completed\n", partition_id);
+        wasmtime_call_future_delete(partition->future);
+        partition->future = NULL;
+        return PARTITION_DONE;
+    }else {
+        printf("Partition %d yielded\n", partition_id);
+        return PARTITION_YIELDED;
     }
 
-    while(!wasmtime_call_future_poll(future)) {
-        printf("Wasm yielded (Partition %d)\n", partition_id);
-    }
+    // while(!wasmtime_call_future_poll(partition->future)) {
+    //     printf("Wasm yielded (Partition %d)\n", partition_id);
+    // }
 
-    printFuelUsage(partition_id);
+    // printFuelUsage(partition_id);
 
-    // Return result
-    if(results[0].kind == WASMTIME_I32) {
-        printf("Fibonacci(%d) =  %d\n", fib, results[0].of.i32);
-    }
+    // // Return result
+    // if(results[0].kind == WASMTIME_I32) {
+    //     printf("Fibonacci(%d) =  %d\n", fib, results[0].of.i32);
+    // }
 
-    wasmtime_call_future_delete(future);
+    // wasmtime_call_future_delete(partition->future);
 
-    return WASM_API_OK;   
+    // return WASM_API_OK;   
+
+    
 }
 
 
@@ -384,9 +419,11 @@ int wasm_api_run_partition(int partition_id, const char* func_name) {
  */
 int wasm_api_fuel_remaining(int partition_id) {
 
+    wasm_partition *partition = partitions[partition_id];
+
     uint64_t fuel_remaining = 0;
 
-    wasmtime_error_t* error = wasmtime_context_get_fuel(partitions[partition_id]->context, &fuel_remaining);
+    wasmtime_error_t* error = wasmtime_context_get_fuel(partition->context, &fuel_remaining);
 
     if(error != NULL) {
         return catch_err(ERR, "Error querying fuel remaining", error, NULL);
