@@ -299,7 +299,7 @@ int wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount, bool yield) {
     // Async Yield
     if(yield) {
         printf("Yielding set for partition %d\n", partition_id);
-        wasmtime_context_fuel_async_yield_interval(partition->context, 100);
+        wasmtime_context_fuel_async_yield_interval(partition->context, YIELD_AFTER);
     } else {
         printf("No yielding set for partition %d\n", partition_id);
         wasmtime_context_fuel_async_yield_interval(partition->context, 0);
@@ -316,7 +316,7 @@ int wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount, bool yield) {
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
 int wasm_api_run_partition(int partition_id, const char* func_name) {
-    printf("RUN PARTITION %d\n", partition_id);
+
     wasm_partition *partition = partitions[partition_id];
     
     int32_t fib = 10;
@@ -337,7 +337,6 @@ int wasm_api_run_partition(int partition_id, const char* func_name) {
 
     // First time call, skips function export in runs after that
     if(partition->future == NULL) {    
-        printf("EXPORT FUNC %d\n", partition_id);
         /* Look up exported function */
 
         // Looks up export by func_name in the current instance, result stored in ext
