@@ -87,7 +87,7 @@ static void sched_cycle() {
     while(1) {
         int current_partition = num_partition;
         printf("<<<<<<<<<<<<<<<<<<<< Partition %u >>>>>>>>>>>>>>>>>>>>\n", current_partition);
-        partition_status status = wasm_api_run_partition(current_partition, "main");
+        wasm_api_result_t status = wasm_api_run_partition(current_partition, "main");
 
         switch (status) {
             case PARTITION_DONE:
