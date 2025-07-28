@@ -23,26 +23,25 @@
 /****************************************************************************
  * Defines
 ****************************************************************************/
-#define ERR            -1
-#define TRAP            0
+
 
 /****************************************************************************
  * Wasm/Wasmtime related instances
 ****************************************************************************/
-wasm_engine_t *engine;
-wasm_config_t *config;
+wasm_engine_t *g_engine;
+wasm_config_t *g_config;
 
 /****************************************************************************
  * Wasm Partition Array
 ****************************************************************************/
-wasm_partition *partitions[NUM_MAX_PARTITIONS] = {NULL};
+wasm_partition_t *g_partitions[NUM_MAX_PARTITIONS] = {NULL};
 
 /****************************************************************************
  * Static Function Prototypes
 ****************************************************************************/
-static int catch_err(int errType, const char* msgPrint, wasmtime_error_t* err, wasm_trap_t* trap);
-static int printFuelUsage(int partition_id);
-static int partitionIdValid(int partition_id);
+static wasm_api_result_t catch_err(err_type_t errType, const char* msgPrint, wasmtime_error_t* err, wasm_trap_t* trap);
+static wasm_api_result_t print_fuel_usage(int partition_id);
+static wasm_api_result_t partition_id_valid(int partition_id);
 
 
 /****************************************************************************
@@ -58,7 +57,7 @@ static int partitionIdValid(int partition_id);
  * @param trap Trap or NULL if its an error
  * @return WASM_API_ERR
  */
-static int catch_err(int errType, const char* msgPrint, wasmtime_error_t* err, wasm_trap_t* trap) {
+static wasm_api_result_t catch_err(err_type_t errType, const char* msgPrint, wasmtime_error_t* err, wasm_trap_t* trap) {
 
     if((errType != ERR && errType != TRAP) || (errType == ERR && err == NULL) || (errType == TRAP && trap == NULL)) {
         return WASM_API_ERR;
@@ -94,10 +93,10 @@ static int catch_err(int errType, const char* msgPrint, wasmtime_error_t* err, w
  *
  * @return WASM_API_OK
  */
-static int printFuelUsage(int partition_id) {
+static wasm_api_result_t print_fuel_usage(int partition_id) {
     uint64_t fuel_remaining = 0;
 
-    wasmtime_context_get_fuel(partitions[partition_id]->context, &fuel_remaining);
+    wasmtime_context_get_fuel(g_partitions[partition_id]->context, &fuel_remaining);
     printf("<<<<<<<<<<<<<<<<<<<< Partition %u >>>>>>>>>>>>>>>>>>>>\n", partition_id);
     printf("Fuel remaining: %lu\n", fuel_remaining);
     printf("Fuel used: %lu\n", (FUEL_AMOUNT - fuel_remaining));
@@ -111,7 +110,7 @@ static int printFuelUsage(int partition_id) {
  *
  * @return WASM_API_OK, else WASM_API_ERR
  */
-static int partitionIdValid(int partition_id) {
+static wasm_api_result_t partition_id_valid(int partition_id) {
     if(partition_id < 0 || partition_id > NUM_MAX_PARTITIONS){
         printf("Invalid partition Id %d\n", partition_id);
         return WASM_API_ERR;
@@ -125,9 +124,9 @@ static int partitionIdValid(int partition_id) {
  * Function Implementations
 ****************************************************************************/
 
-wasm_partition *get_wasm_partition(int partition_id) {
-    partitionIdValid(partition_id);
-    return partitions[partition_id];
+wasm_partition_t *get_wasm_partition(int partition_id) {
+    partition_id_valid(partition_id);
+    return g_partitions[partition_id];
 }
 
 
@@ -136,20 +135,20 @@ wasm_partition *get_wasm_partition(int partition_id) {
  *
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
-int wasm_api_init(void) {
+wasm_api_result_t wasm_api_init(void) {
     
     // Config to enable fuel usage
-    config = wasm_config_new();
+    g_config = wasm_config_new();
 
     // Enable fuel consumption
-    wasmtime_config_consume_fuel_set(config, true);
+    wasmtime_config_consume_fuel_set(g_config, true);
 
     // Async Support
-    wasmtime_config_async_support_set(config, true);
+    wasmtime_config_async_support_set(g_config, true);
 
     // Engine creation
-    engine = wasm_engine_new_with_config(config);
-    if(!engine) {
+    g_engine = wasm_engine_new_with_config(g_config);
+    if(!g_engine) {
         printf("Failed to create Wasmtime engine\n");
         return WASM_API_ERR;
     }
@@ -165,35 +164,35 @@ int wasm_api_init(void) {
  * @param partition_id Partition identifier
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
-int wasm_api_load_partition(int partition_id, const char* wasm_file) {
+wasm_api_result_t wasm_api_load_partition(int partition_id, const char* wasm_file) {
 
     /* Create Wasm partition struct */
 
     // partition_id checks
-    if(partitionIdValid(partition_id) != WASM_API_OK) {
+    if(partition_id_valid(partition_id) != WASM_API_OK) {
         return WASM_API_ERR;
     }
 
     // Check if already loaded
-    if(partitions[partition_id] != NULL) {
+    if(g_partitions[partition_id] != NULL) {
         printf("Partition %d already loaded\n", partition_id);
         return WASM_API_ERR;
     }
 
     // Allocate Mem for a partition
-    wasm_partition *partition = malloc(sizeof(wasm_partition));
+    wasm_partition_t *partition = malloc(sizeof(wasm_partition_t));
     if(!partition) {
         printf("Memory allocation failed!\n");
         return WASM_API_ERR;
     }
 
     // Store in global array 
-    partitions[partition_id] = partition;
+    g_partitions[partition_id] = partition;
 
     partition->partition_id = partition_id;
 
     // Create Wasm related instances and assign
-    partition->store = wasmtime_store_new(engine, NULL, NULL);
+    partition->store = wasmtime_store_new(g_engine, NULL, NULL);
     if(!partition->store) {
         printf("Failed to create Wasmtime store\n");
         return WASM_API_ERR;
@@ -201,10 +200,10 @@ int wasm_api_load_partition(int partition_id, const char* wasm_file) {
     
     partition->context = wasmtime_store_context(partition->store);
 
-    partition->linker = wasmtime_linker_new(engine);
+    partition->linker = wasmtime_linker_new(g_engine);
 
-    partitions[partition_id]->module = NULL;
-    partitions[partition_id]->instantiated = false;
+    g_partitions[partition_id]->module = NULL;
+    g_partitions[partition_id]->instantiated = false;
 
     /* Read .wasm content */
 
@@ -237,7 +236,7 @@ int wasm_api_load_partition(int partition_id, const char* wasm_file) {
     /* Compile Wasm Module */ 
 
     // Pass bytes to Wasmtime for compilation
-    wasmtime_error_t* error = wasmtime_module_new(engine, (const uint8_t*) wasm_data.data, wasm_data.size, &partition->module);
+    wasmtime_error_t* error = wasmtime_module_new(g_engine, (const uint8_t*) wasm_data.data, wasm_data.size, &partition->module);
     wasm_byte_vec_delete(&wasm_data);
 
     if(error != NULL) {
@@ -271,7 +270,7 @@ int wasm_api_load_partition(int partition_id, const char* wasm_file) {
     // Finalise partition attributes
     partition->future = NULL;
     partition->instantiated = true;
-    partitions[partition_id] = partition;
+    g_partitions[partition_id] = partition;
     
 
     return WASM_API_OK;
@@ -286,9 +285,14 @@ int wasm_api_load_partition(int partition_id, const char* wasm_file) {
  * @param yield True when yielding should be activated
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
-int wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount, bool yield) {
+wasm_api_result_t wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount, bool yield) {
 
-    wasm_partition *partition = partitions[partition_id];
+    // partition_id checks
+    if(partition_id_valid(partition_id) != WASM_API_OK) {
+        return WASM_API_ERR;
+    }
+
+    wasm_partition_t *partition = g_partitions[partition_id];
 
     printf("Injecting %lu units of fuel...\n", fuel_amount);
 
@@ -315,9 +319,14 @@ int wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount, bool yield) {
  * @param partition_id Partition identifier
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
-int wasm_api_run_partition(int partition_id, const char* func_name) {
+wasm_api_result_t wasm_api_run_partition(int partition_id, const char* func_name) {
 
-    wasm_partition *partition = partitions[partition_id];
+    // partition_id checks
+    if(partition_id_valid(partition_id) != WASM_API_OK) {
+        return WASM_API_ERR;
+    }
+
+    wasm_partition_t *partition = g_partitions[partition_id];
     
     int32_t fib = 10;
     wasmtime_val_t params[1];
@@ -377,6 +386,7 @@ int wasm_api_run_partition(int partition_id, const char* func_name) {
         }
 
     }
+
     // wasmtime_call_future_poll returns false when yielded
     if(wasmtime_call_future_poll(partition->future)) {
         if(partition->results[0].kind == WASMTIME_I32) {
@@ -390,22 +400,6 @@ int wasm_api_run_partition(int partition_id, const char* func_name) {
         printf("Partition %d yielded\n", partition_id);
         return PARTITION_YIELDED;
     }
-
-    // while(!wasmtime_call_future_poll(partition->future)) {
-    //     printf("Wasm yielded (Partition %d)\n", partition_id);
-    // }
-
-    // printFuelUsage(partition_id);
-
-    // // Return result
-    // if(results[0].kind == WASMTIME_I32) {
-    //     printf("Fibonacci(%d) =  %d\n", fib, results[0].of.i32);
-    // }
-
-    // wasmtime_call_future_delete(partition->future);
-
-    // return WASM_API_OK;   
-
     
 }
 
@@ -416,9 +410,14 @@ int wasm_api_run_partition(int partition_id, const char* func_name) {
  * @param partition_id Partition identifier
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
-int wasm_api_fuel_remaining(int partition_id) {
+wasm_api_result_t wasm_api_fuel_remaining(int partition_id) {
 
-    wasm_partition *partition = partitions[partition_id];
+    // partition_id checks
+    if(partition_id_valid(partition_id) != WASM_API_OK) {
+        return WASM_API_ERR;
+    }
+
+    wasm_partition_t *partition = g_partitions[partition_id];
 
     uint64_t fuel_remaining = 0;
 
@@ -442,19 +441,19 @@ int wasm_api_fuel_remaining(int partition_id) {
  */
 void wasm_api_cleanup(void) {
     for (int i = 0; i < NUM_MAX_PARTITIONS; i++) {
-        if (partitions[i]) {
-            if (partitions[i]->instantiated) {
-                wasmtime_module_delete(partitions[i]->module);
-                wasmtime_store_delete(partitions[i]->store);
+        if (g_partitions[i]) {
+            if (g_partitions[i]->instantiated) {
+                wasmtime_module_delete(g_partitions[i]->module);
+                wasmtime_store_delete(g_partitions[i]->store);
             }
-            free(partitions[i]);
-            partitions[i] = NULL;
+            free(g_partitions[i]);
+            g_partitions[i] = NULL;
         }
     }
 
-    if (engine) {
-        wasm_engine_delete(engine);
-        engine = NULL;
+    if (g_engine) {
+        wasm_engine_delete(g_engine);
+        g_engine = NULL;
     }
 
     printf("\nWasm API cleaned up!\n");
