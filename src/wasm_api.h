@@ -23,14 +23,7 @@
 #define NUM_MAX_PARTITIONS 2
 #define FUEL_AMOUNT     10000000
 #define YIELD_AFTER     1000
-#define NUM_RUNS        100
-
-/****************************************************************************
- * Error Codes
-****************************************************************************/
-#define WASM_API_NO_FUEL           -2 
-#define WASM_API_ERR               -1
-#define WASM_API_OK                 0 
+#define NUM_RUNS        100               
 
 
 /****************************************************************************
@@ -48,14 +41,22 @@ typedef struct wasm_partition {
     bool instantiated;
     wasmtime_val_t *results;
     wasmtime_func_t exported_func;
-}wasm_partition;
+} wasm_partition_t;
 
-
+// Error codes
 typedef enum {
+    WASM_API_NO_FUEL,
+    WASM_API_ERR,               
+    WASM_API_OK,  
     PARTITION_DONE,
     PARTITION_YIELDED,
     PARTITION_ERROR
-} partition_status;
+} wasm_api_result_t;
+
+typedef enum {
+    ERR,
+    TRAP
+} err_type_t;
 
 /****************************************************************************
  * Function Prototypes
@@ -66,7 +67,7 @@ typedef enum {
  *
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
-int wasm_api_init(void);
+wasm_api_result_t wasm_api_init(void);
 
 
 /**
@@ -76,7 +77,7 @@ int wasm_api_init(void);
  * @param partition_id Partition identifier
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
-int wasm_api_load_partition(int partition_id, const char* wasm_file);
+wasm_api_result_t wasm_api_load_partition(int partition_id, const char* wasm_file);
 
 
 /**
@@ -87,7 +88,7 @@ int wasm_api_load_partition(int partition_id, const char* wasm_file);
  * @param yield True when yielding should be activated
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
-int wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount, bool yield);
+wasm_api_result_t wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount, bool yield);
 
  
 /**
@@ -96,7 +97,7 @@ int wasm_api_inject_fuel(int partition_id, uint64_t fuel_amount, bool yield);
  * @param partition_id Partition identifier
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
-int wasm_api_run_partition(int partition_id, const char* func_name);
+wasm_api_result_t wasm_api_run_partition(int partition_id, const char* func_name);
 
 
 /**
@@ -105,7 +106,7 @@ int wasm_api_run_partition(int partition_id, const char* func_name);
  * @param partition_id Partition identifier
  * @return WASM_API_OK, when successful, else WASM_API_ERR
  */
-int wasm_api_fuel_remaining(int partition_id);
+wasm_api_result_t wasm_api_fuel_remaining(int partition_id);
 
 
 /**
@@ -121,7 +122,7 @@ void wasm_api_cleanup(void);
  * @param partition_id
  * @return Returns partition array
  */
-wasm_partition *get_wasm_partition(int partition_id);
+wasm_partition_t *get_wasm_partition(int partition_id);
 
 
 #endif // WASM_API_H
